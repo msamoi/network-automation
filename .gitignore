@@ -1,1 +1,6 @@
 .vscode
+configs
+prePassTemplates
+pubKeys
+envvars.sh
+certs
