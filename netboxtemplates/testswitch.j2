@@ -1,0 +1,52 @@
+hostname "{{ device.name }}"
+max-vlans 32
+no telnet-server 
+{%- for interface in device.interfaces.all() %}{%- set int = loop.index -%}
+{%- if interface.mgmt_only == false %}
+{%- if interface.enabled == false %}
+interface {{ int }}
+ disable
+exit
+{%- endif %}
+{%- else %}
+{{ interface.name }}
+ ip address {{ device.primary_ip.address.ip }} {{ device.primary_ip.address.netmask }}
+{%- endif %}
+{%- endfor %}
+ip default-gateway {{ device.cf.default_gateway }}
+{%- if device.site.cf.ntp is not none %}
+sntp server {{ device.site.cf.ntp }}
+timesync sntp
+sntp unicast
+{%- endif %}
+no snmp-server
+{%- for vl in device.site.vlans.all() %}
+{%- set untagged = [] -%}
+{%- set tagged = [] %}
+vlan {{ vl.vid }}
+ name "{{ vl.name }}"
+{%- for interface in device.interfaces.all() %}
+{%- set int = loop.index -%}
+{%- if interface.untagged_vlan.vid == vl.vid -%}
+{%- set dummy = untagged.append(int) -%}
+{%- endif %}
+{%- for vlan in interface.tagged_vlans.all() %}
+{%- if vlan.vid == vl.vid -%}
+{%- set dummy = tagged.append(int) -%}
+{%- endif %}
+{%- endfor %}
+{%- endfor %}
+{%- if untagged != [] %}
+ untagged {{ untagged|join(',')}}
+{%- endif %}
+{%- if tagged != [] %}
+ tagged {{ tagged|join(',')}}
+{%- endif %}
+exit
+{%- endfor %}
+aaa authentication ssh login radius local 
+aaa authentication ssh enable radius local 
+management-vlan "placeholder"
+ip ssh
+ip ssh filetransfer
+password manager

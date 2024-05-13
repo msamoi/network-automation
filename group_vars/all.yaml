@@ -1,0 +1,7 @@
+passbolt: anatomicjc.passbolt.passbolt
+passbolt_url: "placeholder"
+controller_ip: "placeholder"
+
+# the following should be encrypted for sure
+passbolt_pkey: "placeholder"
+passbolt_pass: "placeholder"

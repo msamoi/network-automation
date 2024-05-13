@@ -1,0 +1,71 @@
+config-file-header
+{{ device.name }}
+vInstantOn_1830_2.5.0.0 (48) / RKN1HF_932_156_003
+SKU Description "Aruba Instant On 1830 8G Switch JL810A"
+@
+!
+unit-type-control-start 
+unit-type unit 1 network gi uplink none 
+unit-type-control-end 
+!
+vlan database
+vlan {% for vl in device.site.vlans.all() %}{{vl.vid}}{% if not loop.last %},{% endif %}{% endfor %}
+exit
+priority-queue out num-of-queues 0 
+hostname {{ device.name }}
+management access-list MACL
+permit service snmp "placeholder"
+deny service snmp 
+permit 
+exit
+management access-class MACL
+logging host {{ device.site.cf.logging_host }} port {{ device.site.cf.logging_port }}
+username {{ '{{ devicecreds.username }}' }} password encrypted {{ '{{ devicecreds.description }}' }} privilege 15 
+clock timezone J +2
+clock source sntp
+sntp unicast client enable
+sntp unicast client poll
+sntp server {{ device.site.cf.ntp }} poll 
+sntp port "placeholder"
+{%- for interface in device.interfaces.all() %}
+{%- if interface.mgmt_only == true %}
+management {{ interface.name }}
+{%- endif %}
+{%- endfor %}
+!
+{%- for vl in device.site.vlans.all() %}
+interface vlan {{ vl.vid }}
+ name "{{ vl.name }}"
+!
+{%- endfor %}
+{%- for interface in device.interfaces.all() %}
+{%- if interface.mgmt_only == false %}
+interface {{ loop.index }}
+{%- if interface.enabled == false %}
+ shutdown 
+{%- endif %}
+{%- if interface.mode == "access" %}
+ switchport general allowed vlan add {{ interface.untagged_vlan.vid }} untagged 
+ switchport general acceptable-frame-type untagged-only 
+ switchport general pvid {{ interface.untagged_vlan.vid }}
+{%- elif interface.mode == "tagged" %}
+{%- set vlans = [] -%}
+{%- for vlan in interface.tagged_vlans.all() %}
+{%- set dummy = vlans.append(vlan.vid) -%}
+{%- endfor %}
+ switchport general allowed vlan add {{ vlans|join(',') }} tagged
+ switchport general allowed vlan add {{ interface.untagged_vlan.vid }} untagged 
+{%- elif "tagged-all" in interface.mode %}
+{%- set vlans = [] -%}
+{%- for vlan in device.site.vlans.all() %}
+{%- set dummy = vlans.append(vlan.vid) -%}
+{%- endfor %}
+ switchport general allowed vlan add {{ vlans|join(',') }} tagged
+ switchport general allowed vlan add {{ interface.untagged_vlan.vid }} untagged
+{%- endif %}
+!
+{%- endif %}
+{%- endfor %}
+exit
+ip ssh-client key rsa key-pair
+{{ '{{ keys }}' }}

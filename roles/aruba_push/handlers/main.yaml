@@ -1,0 +1,161 @@
+- name: Get switch public key
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/device/wcd?{EncryptionSetting}"
+    headers:
+      Cookie: "sessionID=; userName=; firstWelcomeBanner=true; activeLangId=english"
+      Referer: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/config/log_off_page.htm"
+    validate_certs: false
+    return_content: true
+  register: pubkeyresponse
+  listen: Push config
+
+- name: Convert xml response to parseable stuff
+  delegate_to: localhost
+  community.general.xml:
+    xmlstring: "{{ pubkeyresponse.content }}"
+    xpath: /ResponseData/DeviceConfiguration/EncryptionSetting/rsaPublicKey
+    content: text
+  register: pubkey
+  listen: Push config
+
+- name: Make sure folder for public keys and temp folder exists
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "{{ playbook_dir }}/pubKeys"
+    state: directory
+    mode: "0755"
+  listen: Push config
+
+- name: Write public key to folder
+  delegate_to: localhost
+  ansible.builtin.template:
+    src: pubKey.j2
+    dest: "{{ playbook_dir }}/pubKeys/{{ inventory_hostname }}.pem.pub"
+    mode: "0644"
+  listen: Push config
+
+- name: Encrypt credentials with public key
+  delegate_to: localhost
+  ansible.builtin.shell:
+    stdin: "user={{ devicecreds.username }}&password={{ devicecreds.password | urlencode }}&ssd=true&"
+    cmd: >
+      set -o pipefail &&
+      openssl pkeyutl -encrypt
+      -pubin -inkey '{{ playbook_dir }}/pubKeys/{{ inventory_hostname }}.pem.pub'
+      | xxd -p
+    executable: /bin/bash
+  register: credential
+  changed_when: false
+  failed_when: credential.rc != 0
+  listen: Push config
+  no_log: true
+
+- name: Authenticate to switch
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/config/system.xml?action=login&cred={{ credential.stdout | replace('\n','')}}"
+    validate_certs: false
+    follow_redirects: true
+  register: authresponse
+  listen: Push config
+  no_log: true
+
+- name: Pre-push request
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/wcd?{FileTable=&filter=(fileName='backupconf')}"
+    method: "POST"
+    body: "<?xml version='1.0' encoding='utf-8'?><DeviceConfiguration>\n<LoadStatus action=\"delete\"><unitID>0</unitID></LoadStatus>\n</DeviceConfiguration>\n"
+    headers:
+      Content-Type: "application/x-www-form-urlencoded; charset=UTF-8"
+      Cookie: "{{ authresponse.cookies_string }}; userName={{ devicecreds.username }}"
+      Referer: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/home.htm"
+    validate_certs: false
+    return_content: true
+  register: prepushresult
+  listen: Push config
+  no_log: true
+
+- name: Fail when status code is not 0
+  delegate_to: localhost
+  community.general.xml:
+    xmlstring: "{{ prepushresult.content }}"
+    xpath: /ResponseData/ActionStatus/statusCode
+    content: text
+  register: statuscode
+  failed_when: statuscode.matches[0].statusCode != '0'
+  listen: Push config
+  no_log: true
+
+- name: Tell switch to initiate SCP
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/wcd?{FileTable=&filter=(fileName='backupconf')}"
+    method: "POST"
+    body: "<?xml version='1.0' encoding='utf-8'?><DeviceConfiguration>\n<FileCopy action=\"set\"><srcLocation>5</srcLocation><srcIPAddr>{{ controller_ip }}</srcIPAddr><srcFileType>1</srcFileType><srcFileName>{{ hostvars[inventory_hostname]['sites'][0] }}/{{ inventory_hostname }}.conf</srcFileName><destLocation>1</destLocation><destFileType>3</destFileType><destFileName>startup-config</destFileName><srcCredentials>{{ scpuser.username }}:{{ scpuser.password }}</srcCredentials><reqSecAccess>4</reqSecAccess></FileCopy>\n</DeviceConfiguration>"
+    headers:
+      Content-Type: "application/x-www-form-urlencoded; charset=UTF-8"
+      Cookie: "{{ authresponse.cookies_string }}; userName={{ devicecreds.username }}"
+      Referer: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/home.htm"
+    validate_certs: false
+  register: prepushresult
+  listen: Push config
+  no_log: true
+
+- name: Wait until the switch is done downloading the file
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/wcd?{LoadStatus}"
+    method: GET
+    headers:
+      Cookie: "{{ authresponse.cookies_string }}; userName={{ devicecreds.username }}"
+      Referer: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/home.htm"
+    validate_certs: false
+    return_content: true
+  register: _result
+  until: '"<copyStatusType>5</copyStatusType>" in _result.content'
+  retries: 40
+  delay: 0.5
+  listen: Push config
+  no_log: true
+
+- name: Post-push request
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/wcd?{FileTable=&filter=(fileName='backupconf')}"
+    method: "POST"
+    body: "<?xml version='1.0' encoding='utf-8'?><DeviceConfiguration>\n<LoadStatus action=\"delete\"><unitID>0</unitID></LoadStatus>\n</DeviceConfiguration>\n"
+    headers:
+      Content-Type: "application/xml, text/xml, */*: q=0.01"
+      Cookie: "{{ authresponse.cookies_string }}; userName={{ devicecreds.username }}"
+      Referer: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/home.htm"
+    validate_certs: false
+    return_content: true
+  register: postpushresult
+  listen: Push config
+  no_log: true
+
+- name: Fail when status code is not 0
+  delegate_to: localhost
+  community.general.xml:
+    xmlstring: "{{ postpushresult.content }}"
+    xpath: /ResponseData/ActionStatus/statusCode
+    content: text
+  register: statuscode
+  failed_when: statuscode.matches[0].statusCode != '0'
+  listen: Push config
+  no_log: true
+
+  # module to restart switch here - missing to not accidenally restart switches during testing
+
+- name: Log out from switch
+  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/System.xml?action=logout"
+    validate_certs: false
+    headers:
+      Cookie: "{{ authresponse.cookies_string }}; userName={{ devicecreds.username }}"
+      Referer: "https://{{ hostvars[inventory_hostname]['ansible_host'] }}/cs9123e38c/hpe/home.htm"
+  listen: Push config
+  no_log: true

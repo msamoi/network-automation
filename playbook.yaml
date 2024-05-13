@@ -1,0 +1,48 @@
+---
+- name: Get switch configurations
+  hosts: all
+  gather_facts: false
+  roles:
+    - init
+  tags:
+    - init
+
+- name: Write templates to folder
+  hosts: all
+  gather_facts: false
+  roles:
+    - get_configs
+  tags:
+    - getc
+
+- name: Initialize SCP user
+  hosts: all
+  gather_facts: false
+  roles:
+    - scp_user
+  tags:
+    - scp
+
+# - name: Push config to test switch
+#  hosts: sites_test
+#  gather_facts: false
+#  roles:
+#    - test_push
+#  tags:
+#    - push
+
+- name: Push config to Aruba switches
+  hosts: device_types_aruba-1830
+  gather_facts: false
+  roles:
+    - aruba_push
+  tags:
+    - apush
+
+- name: Push config to Cisco switches
+  hosts: device_types_sg-250-26p
+  gather_facts: false
+  roles:
+    - cisco_push
+  tags:
+    - cpush

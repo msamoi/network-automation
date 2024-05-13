@@ -1,0 +1,11 @@
+---
+plugin: netbox.netbox.nb_inventory
+validate_certs: false
+config_context: true
+fetch_all: false
+group_by:
+- sites
+- device_types
+compose:
+  ansible_network_os: platform.slug
+  device_id: id

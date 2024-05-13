@@ -1,0 +1,31 @@
+- name: Get credentials from passbolt
+  delegate_to: localhost
+  ansible.builtin.set_fact:
+    devicecreds: "{{ lookup(passbolt, inventory_hostname) }}"
+  environment:
+    PASSBOLT_BASE_URL: "{{ passbolt_url }}"
+    PASSBOLT_PRIVATE_KEY: "{{ passbolt_pkey }}"
+    PASSBOLT_PASSPHRASE: "{{ passbolt_pass }}"
+  no_log: true
+
+- name: Render config with credentials
+  delegate_to: localhost
+  become: true
+  ansible.builtin.template:
+    mode: "0700"
+    src: "prePassTemplates/{{ hostvars[inventory_hostname]['sites'][0] }}/{{ inventory_hostname }}.j2"
+    dest: "{{ item }}"
+    owner: "{{ scpuser.username }}"
+  with_items:
+    - "configs/{{ hostvars[inventory_hostname]['sites'][0] }}/{{ inventory_hostname }}.conf"
+    - "/home/{{ scpuser.username }}/{{ hostvars[inventory_hostname]['sites'][0] }}/{{ inventory_hostname }}.conf"
+  notify:
+    - Push config
+  no_log: true
+
+# testing task to always trigger push
+- name: Trigger Push config
+  delegate_to: localhost
+  ansible.builtin.command: /bin/true
+  changed_when: true
+  notify: Push config

@@ -1,0 +1,22 @@
+- name: Get API address and token from environment
+  ansible.builtin.set_fact:
+    netbox_api: "{{ lookup('ansible.builtin.env', 'NETBOX_API') }}"
+    netbox_token: "{{ lookup('ansible.builtin.env', 'NETBOX_TOKEN') }}"
+  no_log: true
+
+- name: Pull rendered configs from API
+  delegate_to: localhost
+  ansible.builtin.uri:
+    method: "POST"
+    url: "{{ netbox_api }}/api/dcim/devices/{{ hostvars[inventory_hostname]['device_id'] }}/render-config/"
+    headers:
+      Authorization: "Token {{ netbox_token }}"
+    validate_certs: false
+  register: config
+
+- name: Put template into file
+  delegate_to: localhost
+  ansible.builtin.template:
+    mode: "0644"
+    src: template.j2
+    dest: "prePassTemplates/{{ hostvars[inventory_hostname]['sites'][0] }}/{{ inventory_hostname }}.j2"

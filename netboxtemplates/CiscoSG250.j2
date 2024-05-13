@@ -1,0 +1,84 @@
+config-file-header
+{{ device.name }}
+v2.4.5.71 / RTESLA2.4.5_930_181_144
+CLI v1.0
+file SSD indicator encrypted
+@
+ssd-control-start
+ssd config
+ssd file passphrase control unrestricted
+no ssd file integrity control
+ssd-control-end cb0a3fdb1f3a1af4e4430033719968c0
+!
+!
+unit-type-control-start
+unit-type unit 1 network gi uplink none
+unit-type-control-end
+!
+vlan database
+vlan {% for vl in device.site.vlans.all() %}{{vl.vid}}{% if not loop.last %},{% endif %}{% endfor %}
+exit
+voice vlan oui-table add 0001e3 Siemens_AG_phone________
+voice vlan oui-table add 00036b Cisco_phone_____________
+voice vlan oui-table add 00096e Avaya___________________
+voice vlan oui-table add 000fe2 H3C_Aolynk______________
+voice vlan oui-table add 0060b9 Philips_and_NEC_AG_phone
+voice vlan oui-table add 00d01e Pingtel_phone___________
+voice vlan oui-table add 00e075 Polycom/Veritel_phone___
+voice vlan oui-table add 00e0bb 3Com_phone______________
+bonjour interface range vlan 1
+hostname {{ device.name }}
+logging host {{ device.site.cf.logging_host }} port {{ device.site.cf.logging_port }}
+logging origin-id ip
+username {{ '{{ devicecreds.username }}' }}  password encrypted {{ '{{ devicecreds.description }}' }}  privilege 15
+ip ssh server
+ip ssh password-auth
+clock timezone " " +3
+sntp server {{ device.site.cf.ntp }}
+clock dhcp timezone
+ip name-server  8.8.8.8
+!
+{%- for vl in device.site.vlans.all() %}
+interface vlan {{ vl.vid }}
+ name {{ vl.name }}
+!
+{%- endfor %}
+{%- for interface in device.interfaces.all() %}
+{%- if interface.mgmt_only == false %}
+interface {{ interface.name }}
+{%- if interface.enabled == false %}
+ shutdown 
+{%- endif %}
+{%- if interface.mode == "access" %}
+ switchport mode access
+ switchport access vlan {{ interface.untagged_vlan.vid }}
+{%- elif interface.mode == "tagged" %}
+ switchport mode trunk
+ switchport trunk native vlan {{ interface.untagged_vlan.vid or 'none' }}
+{%- set vlans = [] -%}
+{%- for vlan in interface.tagged_vlans.all() %}
+{%- set dummy = vlans.append(vlan.vid) -%}
+{%- endfor %}
+ switchport trunk allowed vlan add {{ vlans|join(',') }}
+{%- elif "tagged-all" in interface.mode %}
+ switchport mode trunk
+ switchport trunk allowed vlan all
+ switchport trunk native vlan {{ interface.untagged_vlan.vid or 'none' }}
+{%- else %}
+{%- if interface.lag != None %}
+ channel-group {% for char in interface.lag.name %}{%- if char.isdigit() %}{{ char }}{%- endif %}{%- endfor %}
+  mode on
+{%- endif %}
+{%- endif %}
+{%- else %}
+interface {{ interface.name }}
+ description Management VLAN
+{%- if interface.enabled == false %}
+ shutdown
+{%- endif %}
+ ip address {{ device.primary_ip.address.ip }} {{ device.primary_ip.address.netmask }}
+{%- endif %}
+!
+{%- endfor %}
+exit
+ip default-gateway {{ device.cf.default_gateway }}

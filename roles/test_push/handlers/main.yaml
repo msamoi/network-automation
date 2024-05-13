@@ -1,0 +1,6 @@
+# does not work
+- name: Push config
+  delegate_to: localhost
+  ansible.builtin.shell:
+    cmd: 'sshpass -p {{ pbresult.password }} scp "~/ansible-testing/configs/{{ hostvars[inventory_hostname][''sites''][0] }}/{{ inventory_hostname }}.conf" {{ pbresult.username }}@{{ hostvars[inventory_hostname]['ansible_host']}}:cfg/startup-config'
+  no_log: true

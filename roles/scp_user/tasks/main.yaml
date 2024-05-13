@@ -1,0 +1,26 @@
+- name: Get scp user credentials from passbolt
+  delegate_to: localhost
+  ansible.builtin.set_fact:
+    scpuser: "{{ lookup(passbolt, 'vm-scp-account') }}"
+  environment:
+    PASSBOLT_BASE_URL: "{{ passbolt_url }}"
+    PASSBOLT_PRIVATE_KEY: "{{ passbolt_pkey }}"
+    PASSBOLT_PASSPHRASE: "{{ passbolt_pass }}"
+  no_log: true
+
+- name: Make sure user exists for scp
+  delegate_to: localhost
+  become: true
+  ansible.builtin.user:
+    name: "{{ scpuser.username }}"
+    password: "{{ scpuser.description }}" # user module requires password hash instead of plaintext version. hash is stored in description
+  no_log: true
+
+- name: Make sure folder structure exists for SCP user config files
+  delegate_to: localhost
+  become: true
+  ansible.builtin.file:
+    mode: "0755"
+    path: "/home/{{ scpuser.username }}/{{ hostvars[inventory_hostname]['sites'][0] }}"
+    state: directory
+    owner: "{{ scpuser.username }}"

@@ -1,0 +1,15 @@
+- name: Create site template folders
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "prePassTemplates/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ hostvars[inventory_hostname]['sites'] }}"
+
+- name: Create site config folders
+  delegate_to: localhost
+  ansible.builtin.file:
+    path: "configs/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ hostvars[inventory_hostname]['sites'] }}"
